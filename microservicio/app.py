@@ -18,7 +18,7 @@ def home():
     })
 
 
-Python
+
 @app.route("/api/tasa")
 def obtener_tasa():
     """
