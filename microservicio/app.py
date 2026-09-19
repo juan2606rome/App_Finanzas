@@ -5,8 +5,8 @@ from flask import Flask, jsonify
 
 app = Flask(__name__)
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://feixeytzxjbqjtxjdyco.supabase.co/rest/v1/")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "sb_publishable_16t6f854J20tkbkuJFBVhQ_LqgivwcA")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 
 
 @app.route("/")
