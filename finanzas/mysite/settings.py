@@ -130,4 +130,4 @@ MAILERS = {
 
 
 
-MICROSERVICIO_TASA_URL = "https://tu-microservicio.onrender.com/api/tasa"
+MICROSERVICIO_TASA_URL = "https://app-finanzas-hqu1.onrender.com/api/tasa"
