@@ -18,6 +18,7 @@ def home():
     })
 
 
+Python
 @app.route("/api/tasa")
 def obtener_tasa():
     """
@@ -34,8 +35,14 @@ def obtener_tasa():
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
     }
+
+    # Limpiamos la URL por si incluye /rest/v1/ al final
+    base_url = SUPABASE_URL.rstrip("/")
+    if base_url.endswith("/rest/v1"):
+        base_url = base_url[:-8]  # Le quita el /rest/v1 si lo trae
+
     url = (
-        f"{SUPABASE_URL}/rest/v1/tasas"
+        f"{base_url}/rest/v1/tasas"
         "?select=*&order=fecha_actualizacion.desc&limit=1"
     )
 
