@@ -1,6 +1,7 @@
 import os
 
 import requests
+from flask_swagger_ui import get_swaggerui_blueprint
 from flask import Flask, jsonify
 
 app = Flask(__name__)
