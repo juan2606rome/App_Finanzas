@@ -1,0 +1,7 @@
+Include/ 
+Lib/ 
+Scripts/ 
+pyvenv.cfg 
+db.sqlite3 
+__pycache__/ 
+*.pyc 
