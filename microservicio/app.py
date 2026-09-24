@@ -87,7 +87,7 @@ def preguntar_ia():
     }
 
     cuerpo = {
-        "model": "mistral-small-latest",
+        "model": "ministral-8b-2512",
         "messages": [
             {
                 "role": "system",
