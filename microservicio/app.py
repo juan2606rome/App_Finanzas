@@ -2,13 +2,15 @@ import os
 
 import requests
 from flask_swagger_ui import get_swaggerui_blueprint
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
 # configuracion para supabase , leer variables entorno de RENDER
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 
 # ruta principal que menciona que endpoint estan disponibles
 @app.route("/")
@@ -63,6 +65,59 @@ def obtener_tasa():
     })
 
 
+# ruta que recibe una pregunta y la responde usando Mistral IA
+@app.route("/api/preguntar", methods=["POST"])
+def preguntar_ia():
+    if not MISTRAL_API_KEY:
+        return jsonify({
+            "error": "Falta configurar MISTRAL_API_KEY."
+        }), 500
+    # error 500 error interno del servidor
+
+    datos = request.get_json(silent=True) or {}
+    pregunta = (datos.get("pregunta") or "").strip()
+
+    if not pregunta:
+        return jsonify({"error": "No se recibió ninguna pregunta."}), 400
+    # error 400 solicitud incorrecta (el cliente no mandó nada útil)
+
+    headers = {
+        "Authorization": f"Bearer {MISTRAL_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    cuerpo = {
+        "model": "mistral-small-latest",
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Eres un asistente de soporte de una app de finanzas "
+                    "personales que usa pesos colombianos (COP). Ayudas "
+                    "con dudas generales de ahorro, tasas de cambio y uso "
+                    "de la app. Responde en español, corto y claro."
+                ),
+            },
+            {"role": "user", "content": pregunta},
+        ],
+        "temperature": 0.3,
+    }
+
+    # hacemos la peticion a Mistral, tiempo limite 15 segundos
+    try:
+        respuesta = requests.post(MISTRAL_URL, headers=headers, json=cuerpo, timeout=15)
+        respuesta.raise_for_status()
+        datos_respuesta = respuesta.json()
+        texto = datos_respuesta["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"No se pudo contactar a Mistral: {e}"}), 502
+        # error 502 bad gateway, error del servidor externo
+    except (KeyError, IndexError, ValueError) as e:
+        return jsonify({"error": f"Respuesta inesperada de Mistral: {e}"}), 502
+
+    return jsonify({"respuesta": texto})
+
+
 # =========================
 # CONFIGURACION DE SWAGGER
 # =========================
@@ -86,7 +141,7 @@ SWAGGER_SPEC = {
     "openapi": "3.0.3",
     "info": {
         "title": "Microservicio Tasa de Cambio",
-        "description": "Microservicio que consulta la tasa USD a COP almacenada en Supabase.",
+        "description": "Microservicio que consulta la tasa USD a COP almacenada en Supabase y responde preguntas usando Mistral IA.",
         "version": "1.0.0"
     },
     "paths": {
@@ -124,6 +179,40 @@ SWAGGER_SPEC = {
                     },
                     "502": {
                         "description": "Error al consultar Supabase"
+                    }
+                }
+            }
+        },
+        "/api/preguntar": {
+            "post": {
+                "summary": "Preguntarle algo a la IA",
+                "description": "Envía una pregunta y devuelve la respuesta generada por Mistral IA.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "example": {"pregunta": "¿Qué es una tasa de cambio?"}
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Respuesta generada correctamente",
+                        "content": {
+                            "application/json": {
+                                "example": {
+                                    "respuesta": "Una tasa de cambio es el valor al que se convierte una moneda en otra."
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "No se envió ninguna pregunta"
+                    },
+                    "500": {
+                        "description": "Falta configurar MISTRAL_API_KEY"
+                    },
+                    "502": {
+                        "description": "Error al consultar Mistral"
                     }
                 }
             }

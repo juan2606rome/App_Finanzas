@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     "cuentas",
     "tasas",
+    "ia",
 ]
 
 MIDDLEWARE = [
@@ -131,3 +132,4 @@ MAILERS = {
 
 
 MICROSERVICIO_TASA_URL = "https://app-finanzas-hqu1.onrender.com/api/tasa"
+MICROSERVICIO_IA_URL = "https://app-finanzas-hqu1.onrender.com/api/preguntar"
