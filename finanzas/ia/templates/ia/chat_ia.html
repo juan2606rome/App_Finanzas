@@ -1,3 +1,4 @@
+<!-- ruta: finanzas/ia/templates/ia/chat_ia.html -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -22,16 +23,17 @@
     <div class="container">
         <h4>Chat de soporte con IA</h4>
         <p class="text-muted">
-            Escribe una pregunta relacionada con finanzas personales, ahorro
-            o tasas de cambio. Por ahora la IA no conoce tus cuentas ni tus
-            saldos: solo responde de forma general.
+            Escribe una pregunta sobre tus finanzas: cuánto dinero tienes,
+            cuánto equivale en dólares, o cuáles fueron tus últimos
+            movimientos. La IA consulta la información real de tus cuentas
+            (sincronizada en Supabase) antes de responder.
         </p>
 
         <form method="post" class="mb-4">
             {% csrf_token %}
             <div class="mb-3">
                 <textarea name="pregunta" class="form-control" rows="3"
-                    placeholder="Ej: ¿qué fue el precio del dólar en abril de 2025?">{{ pregunta }}</textarea>
+                    placeholder="Ej: ¿cuántos dólares puedo tener con mi plata? / ¿cuáles fueron mis últimas transferencias?">{{ pregunta }}</textarea>
             </div>
             <button type="submit" class="btn btn-primary">Enviar</button>
         </form>

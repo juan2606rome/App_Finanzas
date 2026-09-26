@@ -1,7 +1,10 @@
+# ruta: .gitignore (raíz del proyecto)
 Include/ 
 Lib/ 
 Scripts/ 
 pyvenv.cfg 
 db.sqlite3 
+.env
+finanzas/.env
 __pycache__/ 
 *.pyc 

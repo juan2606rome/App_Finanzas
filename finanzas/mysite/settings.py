@@ -1,3 +1,4 @@
+# ruta: finanzas/mysite/settings.py
 """
 Django settings for mysite project.
 
@@ -10,10 +11,19 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Carga las variables definidas en un archivo .env (en la raíz del
+# proyecto, junto a manage.py) hacia el entorno del proceso. Si el
+# archivo no existe simplemente no hace nada, así que es seguro tenerlo
+# en producción también (ahí las variables ya vienen del hosting).
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -131,5 +141,16 @@ MAILERS = {
 
 
 
-MICROSERVICIO_TASA_URL = "https://app-finanzas-hqu1.onrender.com/api/tasa"
-MICROSERVICIO_IA_URL = "https://app-finanzas-hqu1.onrender.com/api/preguntar"
+MICROSERVICIO_TASA_URL = os.environ.get(
+    "MICROSERVICIO_TASA_URL", "https://app-finanzas-hqu1.onrender.com/api/tasa"
+)
+MICROSERVICIO_IA_URL = os.environ.get(
+    "MICROSERVICIO_IA_URL", "https://app-finanzas-hqu1.onrender.com/api/preguntar"
+)
+
+# Credenciales de Supabase, para que Django (esta app) pueda ESCRIBIR
+# ahí una copia de las cuentas y transacciones. Se leen del archivo
+# .env (ver .env.example). El microservicio de Flask usa sus propias
+# variables de entorno (configuradas en Render), no estas.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")

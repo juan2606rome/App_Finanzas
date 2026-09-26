@@ -1,8 +1,10 @@
+# ruta: finanzas/cuentas/views.py
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 
+from . import supabase_sync
 from .models import Cuenta, Transaccion
 
 
@@ -22,8 +24,6 @@ def index(request):
     )
 
 
-
-
 def crear_cuenta(request):
     """Formulario para agregar una cuenta nueva."""
     if request.method == "POST":
@@ -40,14 +40,16 @@ def crear_cuenta(request):
             return render(request, "cuentas/crear_cuenta.html")
 
         cuenta = Cuenta.objects.create(nombre=nombre, saldo=saldo_inicial)
+        supabase_sync.sync_upsert_cuenta(cuenta)
 
         if saldo_inicial > 0:
-            Transaccion.objects.create(
+            movimiento = Transaccion.objects.create(
                 tipo=Transaccion.DEPOSITO,
                 cuenta_destino=cuenta,
                 monto=saldo_inicial,
                 descripcion="Saldo inicial al crear la cuenta",
             )
+            supabase_sync.sync_insertar_transaccion(movimiento)
 
         messages.success(request, f"Cuenta '{cuenta.nombre}' creada correctamente.")
         return redirect("cuentas:index")
@@ -55,6 +57,49 @@ def crear_cuenta(request):
     return render(request, "cuentas/crear_cuenta.html")
 
 
+def editar_cuenta(request, cuenta_id):
+    """Formulario para cambiar el nombre de una cuenta ya existente."""
+    cuenta = get_object_or_404(Cuenta, pk=cuenta_id)
+
+    if request.method == "POST":
+        nuevo_nombre = request.POST.get("nombre", "").strip()
+
+        if not nuevo_nombre:
+            messages.error(request, "El nombre de la cuenta es obligatorio.")
+            return render(request, "cuentas/editar_cuenta.html", {"cuenta": cuenta})
+
+        cuenta.nombre = nuevo_nombre
+        cuenta.save()
+        supabase_sync.sync_upsert_cuenta(cuenta)
+
+        messages.success(request, f"La cuenta ahora se llama '{cuenta.nombre}'.")
+        return redirect("cuentas:detalle_cuenta", cuenta_id=cuenta.id)
+
+    return render(request, "cuentas/editar_cuenta.html", {"cuenta": cuenta})
+
+
+def eliminar_cuenta(request, cuenta_id):
+    """
+    Confirma y elimina una cuenta.
+
+    Si la cuenta todavía tiene saldo, el propio template le muestra al
+    usuario una advertencia fuerte (cuánto dinero va a "perder de
+    vista"), pero igual lo dejamos confirmar si de verdad quiere
+    borrarla: los movimientos no se borran (ver Transaccion con
+    on_delete=SET_NULL), solo la cuenta como tal.
+    """
+    cuenta = get_object_or_404(Cuenta, pk=cuenta_id)
+
+    if request.method == "POST":
+        nombre = cuenta.nombre
+        cuenta_id_borrado = cuenta.id
+        cuenta.delete()
+        supabase_sync.sync_eliminar_cuenta(cuenta_id_borrado)
+
+        messages.success(request, f"Se eliminó la cuenta '{nombre}'.")
+        return redirect("cuentas:index")
+
+    return render(request, "cuentas/eliminar_cuenta.html", {"cuenta": cuenta})
 
 
 def detalle_cuenta(request, cuenta_id):
@@ -100,12 +145,16 @@ def depositar(request, cuenta_id):
         else:
             cuenta.saldo += monto
             cuenta.save()
-            Transaccion.objects.create(
+            supabase_sync.sync_upsert_cuenta(cuenta)
+
+            movimiento = Transaccion.objects.create(
                 tipo=Transaccion.DEPOSITO,
                 cuenta_destino=cuenta,
                 monto=monto,
                 descripcion=request.POST.get("descripcion", ""),
             )
+            supabase_sync.sync_insertar_transaccion(movimiento)
+
             messages.success(request, f"Se agregaron ${monto} a {cuenta.nombre}.")
             return redirect("cuentas:detalle_cuenta", cuenta_id=cuenta.id)
 
@@ -132,12 +181,16 @@ def retirar(request, cuenta_id):
         else:
             cuenta.saldo -= monto
             cuenta.save()
-            Transaccion.objects.create(
+            supabase_sync.sync_upsert_cuenta(cuenta)
+
+            movimiento = Transaccion.objects.create(
                 tipo=Transaccion.RETIRO,
                 cuenta_origen=cuenta,
                 monto=monto,
                 descripcion=request.POST.get("descripcion", ""),
             )
+            supabase_sync.sync_insertar_transaccion(movimiento)
+
             messages.success(request, f"Se retiraron ${monto} de {cuenta.nombre}.")
             return redirect("cuentas:detalle_cuenta", cuenta_id=cuenta.id)
 
@@ -173,13 +226,18 @@ def transferir(request):
             destino.saldo += monto
             origen.save()
             destino.save()
-            Transaccion.objects.create(
+            supabase_sync.sync_upsert_cuenta(origen)
+            supabase_sync.sync_upsert_cuenta(destino)
+
+            movimiento = Transaccion.objects.create(
                 tipo=Transaccion.TRANSFERENCIA,
                 cuenta_origen=origen,
                 cuenta_destino=destino,
                 monto=monto,
                 descripcion=request.POST.get("descripcion", ""),
             )
+            supabase_sync.sync_insertar_transaccion(movimiento)
+
             messages.success(
                 request, f"Se transfirieron ${monto} de {origen.nombre} a {destino.nombre}."
             )

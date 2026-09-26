@@ -1,3 +1,4 @@
+<!-- ruta: finanzas/cuentas/templates/cuentas/detalle_cuenta.html -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -35,6 +36,8 @@
             <a href="{% url 'cuentas:depositar' cuenta.id %}" class="btn btn-success btn-sm">Depositar</a>
             <a href="{% url 'cuentas:retirar' cuenta.id %}" class="btn btn-warning btn-sm">Retirar</a>
             <a href="{% url 'cuentas:transferir' %}" class="btn btn-primary btn-sm">Transferir</a>
+            <a href="{% url 'cuentas:editar_cuenta' cuenta.id %}" class="btn btn-outline-secondary btn-sm">Editar nombre</a>
+            <a href="{% url 'cuentas:eliminar_cuenta' cuenta.id %}" class="btn btn-outline-danger btn-sm">Eliminar cuenta</a>
         </div>
 
         <h5>Historial de esta cuenta</h5>
@@ -50,7 +53,7 @@
                     <td>${{ mov.monto_formateado }}</td>
                     <td>
                         {% if mov.tipo == "transferencia" %}
-                            {{ mov.cuenta_origen.nombre }} -> {{ mov.cuenta_destino.nombre }}
+                            {{ mov.cuenta_origen_nombre|default:"(cuenta eliminada)" }} -> {{ mov.cuenta_destino_nombre|default:"(cuenta eliminada)" }}
                         {% else %}
                             {{ mov.descripcion }}
                         {% endif %}
