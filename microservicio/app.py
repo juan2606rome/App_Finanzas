@@ -180,6 +180,7 @@ def _construir_contexto_financiero():
             monto = _formatear_pesos(m.get("monto"))
             origen = m.get("cuenta_origen_nombre") or "(cuenta eliminada)"
             destino = m.get("cuenta_destino_nombre") or "(cuenta eliminada)"
+            descripcion = (m.get("descripcion") or "").strip()
 
             if tipo == "transferencia":
                 detalle = f"transferencia de ${monto} de {origen} a {destino}"
@@ -189,6 +190,9 @@ def _construir_contexto_financiero():
                 detalle = f"retiro de ${monto} de {origen}"
             else:
                 detalle = f"{tipo} de ${monto}"
+
+            if descripcion:
+                detalle += f" (descripción: {descripcion})"
 
             lineas.append(f"- {fecha}: {detalle}")
 
