@@ -157,9 +157,9 @@ MAILERS = {
 # Las URLs van sin "/" al final, por ejemplo https://mi-servicio.onrender.com
 MICROSERVICIOS = [
     {"nombre": "Python", "url": os.environ.get("MS_PYTHON_URL", "https://app-finanzas-hqu1.onrender.com")},
-    {"nombre": "Java", "url": os.environ.get("MS_JAVA_URL", "")},
-    {"nombre": "Node.js", "url": os.environ.get("MS_NODE_URL", "")},
-    {"nombre": "Go", "url": os.environ.get("MS_GO_URL", "")},
+    {"nombre": "Java", "url": os.environ.get("MS_JAVA_URL", "https://app-finanzas-1-f26s.onrender.com")},
+    {"nombre": "Node.js", "url": os.environ.get("MS_NODE_URL", "https://app-finanzas-2-mw1d.onrender.com")},
+    {"nombre": "Go", "url": os.environ.get("MS_GO_URL", "https://app-finanzas-3.onrender.com")},
 ]
 
 # Segundos de espera por servicio antes de pasar al siguiente.
