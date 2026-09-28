@@ -2,10 +2,10 @@
 from decimal import Decimal, InvalidOperation
 
 import requests
-from django.conf import settings
 from django.shortcuts import render
 
 from cuentas.models import Cuenta
+from mysite.microservicios import TodosFallaron, llamar
 
 
 def cotizacion(request):
@@ -17,7 +17,8 @@ def cotizacion(request):
        la(s) tasa(s) de cambio consultando una base de datos distinta
        a la SQLite de este proyecto (Supabase).
 
-    El microservicio devuelve una LISTA de monedas (no solo USD): si en
+    El microservicio (el primero que responda: Python, Java, Node.js o Go)
+    devuelve una LISTA de monedas (no solo USD): si en
     la tabla "tasas" de Supabase hay una fila para "EUR" o cualquier
     otra, aparece aquí automáticamente, sin tocar código.
     """
@@ -29,9 +30,12 @@ def cotizacion(request):
 
     monedas = []
     error = None
+    servicio = None  # cuál microservicio terminó respondiendo
+    fallos = []      # cuáles fallaron antes (resiliencia)
 
     try:
-        respuesta = requests.get(settings.MICROSERVICIO_TASA_URL, timeout=6)
+        # Resiliencia: prueba Python -> Java -> Node.js -> Go (ver mysite/microservicios.py)
+        respuesta, servicio, fallos = llamar("GET", "/api/tasa")
         respuesta.raise_for_status()
         datos = respuesta.json()
 
@@ -66,8 +70,10 @@ def cotizacion(request):
         if not monedas:
             error = "El microservicio no devolvió ninguna tasa registrada."
 
+    except TodosFallaron as e:
+        error = f"No respondió ningún microservicio ({e})."
     except requests.exceptions.RequestException as e:
-        error = f"No se pudo contactar al microservicio: {e}"
+        error = f"El microservicio {servicio} respondió con error: {e}"
     except (KeyError, ValueError, TypeError) as e:
         error = f"El microservicio respondió en un formato inesperado: {e}"
 
@@ -78,5 +84,7 @@ def cotizacion(request):
             "total_cop": total_cop_formateado,
             "monedas": monedas,
             "error": error,
+            "servicio": servicio,
+            "fallos": fallos,
         },
     )

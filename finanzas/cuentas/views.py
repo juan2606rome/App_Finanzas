@@ -40,7 +40,7 @@ def crear_cuenta(request):
             return render(request, "cuentas/crear_cuenta.html")
 
         cuenta = Cuenta.objects.create(nombre=nombre, saldo=saldo_inicial)
-        supabase_sync.sync_upsert_cuenta(cuenta)
+        supabase_sync.sync_crear_cuenta(cuenta)
 
         if saldo_inicial > 0:
             movimiento = Transaccion.objects.create(
@@ -70,7 +70,7 @@ def editar_cuenta(request, cuenta_id):
 
         cuenta.nombre = nuevo_nombre
         cuenta.save()
-        supabase_sync.sync_upsert_cuenta(cuenta)
+        supabase_sync.sync_actualizar_cuenta(cuenta)
 
         messages.success(request, f"La cuenta ahora se llama '{cuenta.nombre}'.")
         return redirect("cuentas:detalle_cuenta", cuenta_id=cuenta.id)
@@ -145,7 +145,7 @@ def depositar(request, cuenta_id):
         else:
             cuenta.saldo += monto
             cuenta.save()
-            supabase_sync.sync_upsert_cuenta(cuenta)
+            supabase_sync.sync_actualizar_cuenta(cuenta)
 
             movimiento = Transaccion.objects.create(
                 tipo=Transaccion.DEPOSITO,
@@ -181,7 +181,7 @@ def retirar(request, cuenta_id):
         else:
             cuenta.saldo -= monto
             cuenta.save()
-            supabase_sync.sync_upsert_cuenta(cuenta)
+            supabase_sync.sync_actualizar_cuenta(cuenta)
 
             movimiento = Transaccion.objects.create(
                 tipo=Transaccion.RETIRO,
@@ -226,8 +226,8 @@ def transferir(request):
             destino.saldo += monto
             origen.save()
             destino.save()
-            supabase_sync.sync_upsert_cuenta(origen)
-            supabase_sync.sync_upsert_cuenta(destino)
+            supabase_sync.sync_actualizar_cuenta(origen)
+            supabase_sync.sync_actualizar_cuenta(destino)
 
             movimiento = Transaccion.objects.create(
                 tipo=Transaccion.TRANSFERENCIA,

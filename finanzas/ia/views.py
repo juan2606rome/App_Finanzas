@@ -1,6 +1,8 @@
+# ruta: finanzas/ia/views.py
 import requests
-from django.conf import settings
 from django.shortcuts import render, redirect
+
+from mysite.microservicios import TodosFallaron, llamar
 
 
 def chat_ia(request):
@@ -12,10 +14,11 @@ def chat_ia(request):
             request.session.pop("ia_respuesta", None)
         else:
             try:
-                resultado = requests.post(
-                    settings.MICROSERVICIO_IA_URL,
-                    json={"pregunta": pregunta},
-                    timeout=20,
+                # Resiliencia: prueba Python -> Java -> Node.js -> Go
+                # (ver mysite/microservicios.py). Solo se pasa al siguiente si
+                # el anterior no responde o falla con error del servidor.
+                resultado, servicio, fallos = llamar(
+                    "POST", "/api/preguntar", json={"pregunta": pregunta}, timeout=25
                 )
                 try:
                     datos = resultado.json()
@@ -24,13 +27,18 @@ def chat_ia(request):
 
                 if resultado.ok and datos.get("respuesta"):
                     request.session["ia_respuesta"] = datos["respuesta"]
+                    request.session["ia_servicio"] = servicio
+                    request.session["ia_fallos"] = fallos
                     request.session.pop("ia_error", None)
                 else:
                     request.session["ia_error"] = datos.get(
                         "error",
-                        f"El microservicio respondió con error {resultado.status_code}.",
+                        f"El microservicio {servicio} respondió con error {resultado.status_code}.",
                     )
                     request.session.pop("ia_respuesta", None)
+            except TodosFallaron as e:
+                request.session["ia_error"] = f"No respondió ningún microservicio de IA ({e})."
+                request.session.pop("ia_respuesta", None)
             except requests.exceptions.RequestException as e:
                 request.session["ia_error"] = f"No se pudo contactar al microservicio de IA: {e}"
                 request.session.pop("ia_respuesta", None)
@@ -50,9 +58,17 @@ def chat_ia(request):
     pregunta = request.session.pop("ia_pregunta", "")
     respuesta = request.session.pop("ia_respuesta", None)
     error = request.session.pop("ia_error", None)
+    servicio = request.session.pop("ia_servicio", None)
+    fallos = request.session.pop("ia_fallos", [])
 
     return render(
         request,
         "ia/chat_ia.html",
-        {"pregunta": pregunta, "respuesta": respuesta, "error": error},
+        {
+            "pregunta": pregunta,
+            "respuesta": respuesta,
+            "error": error,
+            "servicio": servicio,
+            "fallos": fallos,
+        },
     )

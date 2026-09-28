@@ -9,10 +9,18 @@ from flask import Flask, jsonify, request
 app = Flask(__name__)
 
 # configuracion para supabase , leer variables entorno de RENDER
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
+def _normalizar_url(url):
+    """Acepta la URL con o sin '/rest/v1' al final (evita la URL duplicada)."""
+    url = url.strip().rstrip("/")
+    if url.lower().endswith("/rest/v1"):
+        url = url[: -len("/rest/v1")]
+    return url.rstrip("/")
+
+
+SUPABASE_URL = _normalizar_url(os.environ.get("SUPABASE_URL", ""))
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
-MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+MISTRAL_URL = os.environ.get("MISTRAL_URL", "https://api.mistral.ai/v1/chat/completions")
 
 # Cuántos movimientos recientes le pasamos a la IA como contexto.
 # Si lo subes mucho, la pregunta a Mistral se vuelve más pesada (y más
@@ -53,7 +61,7 @@ def home():
     return jsonify({
         "status": "ok",
         "servicio": "microservicio-tasa-cambio",
-        "uso": "GET /api/tasa, POST /api/preguntar",
+        "uso": "GET /api/tasa, POST /api/preguntar, POST /api/cuentas, PUT|DELETE /api/cuentas/<id>, POST /api/transacciones",
     })
 
 
@@ -270,6 +278,100 @@ def preguntar_ia():
 
 
 # =========================
+# ESCRITURA: insertar, actualizar y eliminar
+# (las mismas operaciones que tienen los microservicios de Java, Node.js y Go)
+# =========================
+
+CAMPOS_CUENTA = ("id", "nombre", "saldo", "fecha_creacion", "actualizado_en")
+CAMPOS_TRANSACCION = (
+    "id", "tipo", "cuenta_origen_id", "cuenta_destino_id",
+    "cuenta_origen_nombre", "cuenta_destino_nombre", "monto", "descripcion", "fecha",
+)
+# merge-duplicates: si el id ya existe, la fila se actualiza en vez de fallar.
+UPSERT = "resolution=merge-duplicates,return=minimal"
+
+
+def _es_id(valor):
+    return str(valor).isdigit()
+
+
+def _escribir_supabase(metodo, tabla, query, cuerpo=None, prefer=None):
+    """Ejecuta la escritura. Devuelve None si salió bien, o la respuesta
+    de error (json, codigo) lista para retornar desde la ruta."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return jsonify({"error": "falta configurar SUPABASE_URL y SUPABASE_KEY."}), 500
+    headers = _supabase_headers()
+    if prefer:
+        headers["Prefer"] = prefer
+    try:
+        r = requests.request(
+            metodo, f"{SUPABASE_URL}/rest/v1/{tabla}?{query}",
+            headers=headers, json=cuerpo, timeout=6,
+        )
+    except requests.exceptions.RequestException as e:
+        return jsonify({"error": f"No se pudo contactar a Supabase: {e}"}), 502
+    if not r.ok:
+        return jsonify({"error": f"Supabase respondió {r.status_code}: {r.text[:300]}"}), 502
+    return None
+
+
+@app.route("/api/cuentas", methods=["POST"])
+def insertar_cuenta():
+    datos = request.get_json(silent=True) or {}
+    fila = {k: datos[k] for k in CAMPOS_CUENTA if k in datos}
+    if not _es_id(fila.get("id")) or not str(fila.get("nombre", "")).strip() or "saldo" not in fila:
+        return jsonify({"error": "Se requiere id, nombre y saldo."}), 400
+    error = _escribir_supabase("POST", "cuentas", "on_conflict=id", fila, UPSERT)
+    if error:
+        return error
+    return jsonify({"ok": True, "operacion": "insertar", "id": fila["id"]}), 201
+
+
+@app.route("/api/cuentas/<cuenta_id>", methods=["PUT"])
+def actualizar_cuenta(cuenta_id):
+    if not _es_id(cuenta_id):
+        return jsonify({"error": "El id de la cuenta debe ser numérico."}), 400
+    datos = request.get_json(silent=True) or {}
+    fila = {k: datos[k] for k in CAMPOS_CUENTA if k in datos}
+    fila["id"] = int(cuenta_id)
+    if not str(fila.get("nombre", "")).strip() or "saldo" not in fila:
+        return jsonify({"error": "Se requiere nombre y saldo."}), 400
+    error = _escribir_supabase("POST", "cuentas", "on_conflict=id", fila, UPSERT)
+    if error:
+        return error
+    return jsonify({"ok": True, "operacion": "actualizar", "id": fila["id"]})
+
+
+@app.route("/api/cuentas/<cuenta_id>", methods=["DELETE"])
+def eliminar_cuenta(cuenta_id):
+    if not _es_id(cuenta_id):
+        return jsonify({"error": "El id de la cuenta debe ser numérico."}), 400
+    error = _escribir_supabase("DELETE", "cuentas", f"id=eq.{int(cuenta_id)}")
+    if error:
+        return error
+    return jsonify({"ok": True, "operacion": "eliminar", "id": int(cuenta_id)})
+
+
+@app.route("/api/transacciones", methods=["POST"])
+def insertar_transaccion():
+    datos = request.get_json(silent=True) or {}
+    fila = {k: datos[k] for k in CAMPOS_TRANSACCION if k in datos}
+    monto_ok = True
+    try:
+        float(fila.get("monto"))
+    except (TypeError, ValueError):
+        monto_ok = False
+    if (not _es_id(fila.get("id"))
+            or fila.get("tipo") not in ("deposito", "retiro", "transferencia")
+            or not monto_ok):
+        return jsonify({"error": "Se requiere id, tipo (deposito/retiro/transferencia) y monto."}), 400
+    error = _escribir_supabase("POST", "transacciones", "on_conflict=id", fila, UPSERT)
+    if error:
+        return error
+    return jsonify({"ok": True, "operacion": "insertar", "id": fila["id"]}), 201
+
+
+# =========================
 # CONFIGURACION DE SWAGGER
 # =========================
 
@@ -298,7 +400,7 @@ SWAGGER_SPEC = {
             "movimientos, y responde preguntas usando Mistral IA con ese "
             "contexto."
         ),
-        "version": "2.0.0"
+        "version": "3.0.0"
     },
     "paths": {
         "/": {
@@ -378,6 +480,42 @@ SWAGGER_SPEC = {
     }
 }
 
+
+# Rutas de escritura (insertar / actualizar / eliminar) en la documentación
+SWAGGER_SPEC["paths"].update({
+    "/api/cuentas": {
+        "post": {
+            "summary": "INSERTAR una cuenta",
+            "requestBody": {"content": {"application/json": {"example": {
+                "id": 1, "nombre": "Nequi", "saldo": 500000,
+                "fecha_creacion": "2026-09-26T10:00:00+00:00", "actualizado_en": "2026-09-26T10:00:00+00:00"}}}},
+            "responses": {"201": {"description": "Cuenta insertada"}, "400": {"description": "Datos incompletos"}, "502": {"description": "Error de Supabase"}},
+        }
+    },
+    "/api/cuentas/{id}": {
+        "put": {
+            "summary": "ACTUALIZAR una cuenta (nombre y/o saldo)",
+            "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+            "requestBody": {"content": {"application/json": {"example": {"nombre": "Nu", "saldo": 750000}}}},
+            "responses": {"200": {"description": "Cuenta actualizada"}, "400": {"description": "Datos incompletos"}, "502": {"description": "Error de Supabase"}},
+        },
+        "delete": {
+            "summary": "ELIMINAR una cuenta",
+            "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+            "responses": {"200": {"description": "Cuenta eliminada"}, "400": {"description": "Id inválido"}, "502": {"description": "Error de Supabase"}},
+        },
+    },
+    "/api/transacciones": {
+        "post": {
+            "summary": "INSERTAR una transacción (deposito, retiro o transferencia)",
+            "requestBody": {"content": {"application/json": {"example": {
+                "id": 1, "tipo": "transferencia", "cuenta_origen_id": 1, "cuenta_destino_id": 2,
+                "cuenta_origen_nombre": "Nequi", "cuenta_destino_nombre": "Nu",
+                "monto": 200000, "descripcion": "pago arriendo", "fecha": "2026-09-26T10:00:00+00:00"}}}},
+            "responses": {"201": {"description": "Transacción insertada"}, "400": {"description": "Datos incompletos"}, "502": {"description": "Error de Supabase"}},
+        }
+    },
+})
 
 # Ruta que entrega la documentacion Swagger en JSON
 @app.route("/swagger.json")

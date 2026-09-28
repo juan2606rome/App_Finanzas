@@ -141,16 +141,24 @@ MAILERS = {
 
 
 
-MICROSERVICIO_TASA_URL = os.environ.get(
-    "MICROSERVICIO_TASA_URL", "https://app-finanzas-hqu1.onrender.com/api/tasa"
-)
-MICROSERVICIO_IA_URL = os.environ.get(
-    "MICROSERVICIO_IA_URL", "https://app-finanzas-hqu1.onrender.com/api/preguntar"
-)
+# ---------------------------------------------------------------------
+# Microservicios (con resiliencia)
+# ---------------------------------------------------------------------
+# Los cuatro microservicios hacen lo mismo (tasas, IA, insertar, actualizar
+# y eliminar cuentas). Django los prueba EN ESTE ORDEN: si el primero falla,
+# pasa al segundo, luego al tercero y por último al cuarto
+# (ver mysite/microservicios.py). Un servicio con URL vacía se salta.
+# Las URLs van sin "/" al final, por ejemplo https://mi-servicio.onrender.com
+MICROSERVICIOS = [
+    {"nombre": "Python", "url": os.environ.get("MS_PYTHON_URL", "https://app-finanzas-hqu1.onrender.com")},
+    {"nombre": "Java", "url": os.environ.get("MS_JAVA_URL", "")},
+    {"nombre": "Node.js", "url": os.environ.get("MS_NODE_URL", "")},
+    {"nombre": "Go", "url": os.environ.get("MS_GO_URL", "")},
+]
 
-# Credenciales de Supabase, para que Django (esta app) pueda ESCRIBIR
-# ahí una copia de las cuentas y transacciones. Se leen del archivo
-# .env (ver .env.example). El microservicio de Flask usa sus propias
-# variables de entorno (configuradas en Render), no estas.
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "")   
+# Segundos de espera por servicio antes de pasar al siguiente.
+# Lectura: el usuario está esperando la página, así que es más corto.
+# Escritura: corre en segundo plano, así que damos más margen (los servicios
+# gratis de Render tardan en "despertar" si llevaban rato sin usarse).
+MS_TIMEOUT_LECTURA = int(os.environ.get("MS_TIMEOUT_LECTURA", "15"))
+MS_TIMEOUT_ESCRITURA = int(os.environ.get("MS_TIMEOUT_ESCRITURA", "45"))

@@ -49,6 +49,14 @@
                     <p style="white-space: pre-line;">{{ respuesta }}</p>
                 </div>
             </div>
+            <p class="small mt-2">
+                Respondió el microservicio: <strong>{{ servicio }}</strong>
+                {% if fallos %}
+                    <span class="text-danger">
+                        (fallaron antes: {{ fallos|join:", " }} — el sistema pasó automáticamente al siguiente)
+                    </span>
+                {% endif %}
+            </p>
         {% endif %}
 
         <a href="{% url 'cuentas:index' %}" class="btn btn-secondary btn-sm mt-3">Volver al inicio</a>

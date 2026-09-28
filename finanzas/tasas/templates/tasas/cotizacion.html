@@ -28,8 +28,8 @@
                 <strong>No se pudo obtener la tasa de cambio.</strong><br>
                 {{ error }}
                 <hr>
-                <small>Revisa que el microservicio esté desplegado y que la URL en
-                <code>settings.MICROSERVICIO_TASA_URL</code> sea correcta.</small>
+                <small>Revisa que los microservicios estén desplegados y que las URLs en
+                <code>settings.MICROSERVICIOS</code> sean correctas.</small>
             </div>
         {% else %}
             <p>Total en pesos: <strong>${{ total_cop }} COP</strong></p>
@@ -52,6 +52,15 @@
                 </div>
                 {% endfor %}
             </div>
+
+            <p class="small">
+                Datos entregados por el microservicio: <strong>{{ servicio }}</strong>
+                {% if fallos %}
+                    <span class="text-danger">
+                        (fallaron antes: {{ fallos|join:", " }} — el sistema pasó automáticamente al siguiente)
+                    </span>
+                {% endif %}
+            </p>
 
             <p class="text-muted">
                 Estos datos vienen de un microservicio propio desplegado en la

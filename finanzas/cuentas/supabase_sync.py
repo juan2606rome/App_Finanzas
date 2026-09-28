@@ -1,136 +1,122 @@
 # ruta: finanzas/cuentas/supabase_sync.py
 """
-Sincronización de la base local (SQLite) hacia Supabase.
+Sincronización de la base local (SQLite) hacia Supabase, A TRAVÉS DE LOS
+MICROSERVICIOS.
 
 Idea general:
-- SQLite (db.sqlite3) sigue siendo la base "de verdad" de la app: todo
-  se lee y se valida contra ella, igual que antes.
+- SQLite sigue siendo la base "de verdad" de la app.
 - Cada vez que se crea, edita o elimina una Cuenta, o se crea una
-  Transaccion (depósito, retiro, transferencia), además de guardar en
-  SQLite mandamos una copia a Supabase, a dos tablas nuevas:
-  "cuentas" y "transacciones".
-- Esa copia en Supabase es la que después consulta el microservicio
-  para poder responder preguntas con la IA (Mistral), porque Mistral
-  no puede conectarse directo a este SQLite (vive en tu computador /
-  tu servidor de Django, no es accesible públicamente).
+  Transaccion, Django manda la operación a un microservicio, y es el
+  microservicio quien escribe en Supabase. Django ya NO tiene la clave de
+  Supabase: solo la tienen los microservicios.
+- Las tres operaciones que pide el proyecto:
+      INSERTAR   -> POST   /api/cuentas        y  POST /api/transacciones
+      ACTUALIZAR -> PUT    /api/cuentas/<id>
+      ELIMINAR   -> DELETE /api/cuentas/<id>
+- Resiliencia: si el microservicio de Python falla, se intenta con el de
+  Java, luego con el de Node.js y por último con el de Go
+  (ver mysite/microservicios.py).
 
-Diseño importante: si Supabase falla o no hay internet, NINGUNA de
-estas funciones debe romper la operación real del usuario (depositar,
-retirar, etc.). Por eso todo está en try/except y solo se registra un
-aviso en consola con print(); el dinero en SQLite ya quedó guardado
-antes de intentar la sincronización.
+Las operaciones se ponen en una COLA y las procesa un solo hilo en segundo
+plano, una por una y en orden. Así el usuario no espera, y además una
+cuenta siempre llega a Supabase antes que sus transacciones (la tabla
+transacciones apunta a cuentas, y si llegaran al revés fallaría).
+
+Si TODOS los microservicios fallan, no se rompe nada: el dinero ya quedó
+guardado en SQLite y solo se imprime un aviso en la consola.
 """
 
+import queue
 import threading
 
-import requests
 from django.conf import settings
 
-TIMEOUT = 6  # segundos
+from mysite.microservicios import TodosFallaron, llamar
+
+_cola = queue.Queue()
+_hilo = None
+_candado = threading.Lock()
 
 
-def _configurado():
-    return bool(settings.SUPABASE_URL and settings.SUPABASE_KEY)
+def _enviar(metodo, ruta, cuerpo, descripcion):
+    try:
+        respuesta, servicio, fallos = llamar(
+            metodo, ruta, json=cuerpo, timeout=settings.MS_TIMEOUT_ESCRITURA
+        )
+    except TodosFallaron as e:
+        print(f"[sync] {descripcion}: NO se pudo sincronizar, fallaron todos los microservicios -> {e}")
+        return
+
+    aviso = f" (antes fallaron: {', '.join(fallos)})" if fallos else ""
+    if respuesta.ok:
+        print(f"[sync] {descripcion}: OK vía microservicio {servicio}{aviso}")
+    else:
+        print(f"[sync] {descripcion}: {servicio} respondió {respuesta.status_code}: {respuesta.text[:200]}")
 
 
-def _headers(upsert=False):
-    headers = {
-        "apikey": settings.SUPABASE_KEY,
-        "Authorization": f"Bearer {settings.SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        # return=minimal: no necesitamos que Supabase nos devuelva la fila,
-        # así la respuesta es más rápida y liviana.
-        "Prefer": "return=minimal",
-    }
-    if upsert:
-        # merge-duplicates: si ya existe una fila con ese "id", la actualiza
-        # en vez de fallar por duplicado (esto es lo que nos permite usar
-        # el mismo id de SQLite como id en Supabase).
-        headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
-    return headers
+def _trabajador():
+    while True:
+        metodo, ruta, cuerpo, descripcion = _cola.get()
+        try:
+            _enviar(metodo, ruta, cuerpo, descripcion)
+        except Exception as e:  # el hilo nunca debe morirse por un error suelto
+            print(f"[sync] {descripcion}: error inesperado: {e}")
+        finally:
+            _cola.task_done()
 
 
-def _en_segundo_plano(func, *args, **kwargs):
-    """Corre func(*args, **kwargs) en un hilo aparte, para que el
-    usuario no tenga que esperar a que Supabase responda antes de ver
-    la página. Los errores igual quedan controlados dentro de func."""
-    hilo = threading.Thread(target=func, args=args, kwargs=kwargs, daemon=True)
-    hilo.start()
+def _encolar(metodo, ruta, cuerpo, descripcion):
+    global _hilo
+    with _candado:
+        if _hilo is None or not _hilo.is_alive():
+            _hilo = threading.Thread(target=_trabajador, daemon=True)
+            _hilo.start()
+    _cola.put((metodo, ruta, cuerpo, descripcion))
 
 
 # ---------------------------------------------------------------------
 # CUENTAS
 # ---------------------------------------------------------------------
 
-def _upsert_cuenta_sync(cuenta_id, nombre, saldo, fecha_creacion, actualizado_en):
-    if not _configurado():
-        return
-    url = f"{settings.SUPABASE_URL}/rest/v1/cuentas?on_conflict=id"
-    fila = {
-        "id": cuenta_id,
-        "nombre": nombre,
-        "saldo": float(saldo),
-        "fecha_creacion": fecha_creacion.isoformat(),
-        "actualizado_en": actualizado_en.isoformat(),
+def _cuerpo_cuenta(cuenta):
+    # Se arma aquí (no dentro del hilo) para congelar los valores de este
+    # momento, aunque la cuenta cambie de nuevo antes de que se envíe.
+    return {
+        "id": cuenta.id,
+        "nombre": cuenta.nombre,
+        "saldo": float(cuenta.saldo),
+        "fecha_creacion": cuenta.fecha_creacion.isoformat(),
+        "actualizado_en": cuenta.actualizado_en.isoformat(),
     }
-    try:
-        r = requests.post(url, headers=_headers(upsert=True), json=fila, timeout=TIMEOUT)
-        if not r.ok:
-            print(f"[supabase_sync] No se pudo guardar la cuenta {cuenta_id}: {r.status_code} {r.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"[supabase_sync] Error de red guardando la cuenta {cuenta_id}: {e}")
 
 
-def sync_upsert_cuenta(cuenta):
-    """Crea o actualiza en Supabase la fila que corresponde a esta Cuenta."""
-    _en_segundo_plano(
-        _upsert_cuenta_sync,
-        cuenta.id, cuenta.nombre, cuenta.saldo,
-        cuenta.fecha_creacion, cuenta.actualizado_en,
-    )
+def sync_crear_cuenta(cuenta):
+    """INSERTAR: una cuenta nueva."""
+    _encolar("POST", "/api/cuentas", _cuerpo_cuenta(cuenta), f"insertar cuenta {cuenta.id}")
 
 
-def _eliminar_cuenta_sync(cuenta_id):
-    if not _configurado():
-        return
-    url = f"{settings.SUPABASE_URL}/rest/v1/cuentas?id=eq.{cuenta_id}"
-    try:
-        r = requests.delete(url, headers=_headers(), timeout=TIMEOUT)
-        if not r.ok:
-            print(f"[supabase_sync] No se pudo eliminar la cuenta {cuenta_id}: {r.status_code} {r.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"[supabase_sync] Error de red eliminando la cuenta {cuenta_id}: {e}")
+def sync_actualizar_cuenta(cuenta):
+    """ACTUALIZAR: cambió el nombre o el saldo de una cuenta."""
+    _encolar("PUT", f"/api/cuentas/{cuenta.id}", _cuerpo_cuenta(cuenta), f"actualizar cuenta {cuenta.id}")
 
 
 def sync_eliminar_cuenta(cuenta_id):
-    """Elimina en Supabase la cuenta con este id.
+    """ELIMINAR: se borró una cuenta.
 
-    Nota: en la tabla "transacciones" de Supabase, las columnas
-    cuenta_origen_id / cuenta_destino_id están creadas con
-    "on delete set null" (ver supabase_schema.sql), igual que en
-    SQLite, así que el historial de movimientos no se borra."""
-    _en_segundo_plano(_eliminar_cuenta_sync, cuenta_id)
+    En la tabla "transacciones" de Supabase, cuenta_origen_id y
+    cuenta_destino_id están con "on delete set null" (ver
+    supabase_schema.sql), igual que en SQLite, así que el historial de
+    movimientos no se borra."""
+    _encolar("DELETE", f"/api/cuentas/{cuenta_id}", None, f"eliminar cuenta {cuenta_id}")
 
 
 # ---------------------------------------------------------------------
 # TRANSACCIONES
 # ---------------------------------------------------------------------
 
-def _insertar_transaccion_sync(fila):
-    if not _configurado():
-        return
-    url = f"{settings.SUPABASE_URL}/rest/v1/transacciones?on_conflict=id"
-    try:
-        r = requests.post(url, headers=_headers(upsert=True), json=fila, timeout=TIMEOUT)
-        if not r.ok:
-            print(f"[supabase_sync] No se pudo guardar la transacción {fila.get('id')}: {r.status_code} {r.text}")
-    except requests.exceptions.RequestException as e:
-        print(f"[supabase_sync] Error de red guardando la transacción {fila.get('id')}: {e}")
-
-
 def sync_insertar_transaccion(transaccion):
-    """Copia esta Transaccion (depósito, retiro o transferencia) a
-    Supabase. Se llama justo después de Transaccion.objects.create(...)."""
+    """INSERTAR: copia esta Transaccion (depósito, retiro o transferencia)
+    al historial. Se llama justo después de Transaccion.objects.create(...)."""
     fila = {
         "id": transaccion.id,
         "tipo": transaccion.tipo,
@@ -142,4 +128,4 @@ def sync_insertar_transaccion(transaccion):
         "descripcion": transaccion.descripcion,
         "fecha": transaccion.fecha.isoformat(),
     }
-    _en_segundo_plano(_insertar_transaccion_sync, fila)
+    _encolar("POST", "/api/transacciones", fila, f"insertar transacción {transaccion.id}")
