@@ -25,17 +25,23 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # en producción también (ahí las variables ya vienen del hosting).
 load_dotenv(BASE_DIR / ".env")
 
+# Render define esta variable automáticamente en los servicios web (con el
+# dominio público, ej. mi-app.onrender.com). En tu PC no existe, así que sirve
+# para saber si la app está corriendo en producción (Render) o en local.
+RENDER_HOST = os.environ.get("RENDER_EXTERNAL_HOSTNAME")
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-*b$8ub+coqm1j)-0q(8gl1et7a*fe&44+v&53j+lb8_ng=*a80'
+SECRET_KEY = os.environ.get("SECRET_KEY", 'django-insecure-*b$8ub+coqm1j)-0q(8gl1et7a*fe&44+v&53j+lb8_ng=*a80')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# En tu PC: DEBUG activo. En Render (producción): apagado.
+DEBUG = not RENDER_HOST
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [RENDER_HOST] if RENDER_HOST else []
 
 
 # Application definition
@@ -162,3 +168,29 @@ MICROSERVICIOS = [
 # gratis de Render tardan en "despertar" si llevaban rato sin usarse).
 MS_TIMEOUT_LECTURA = int(os.environ.get("MS_TIMEOUT_LECTURA", "15"))
 MS_TIMEOUT_ESCRITURA = int(os.environ.get("MS_TIMEOUT_ESCRITURA", "45"))
+
+
+# ---------------------------------------------------------------------
+# Producción (Render)
+# ---------------------------------------------------------------------
+# Base de datos: si existe la variable DATABASE_URL (Render la recibe desde su
+# PostgreSQL) se usa esa base; si no, sigue usando el SQLite local de siempre.
+# Esto es necesario porque el disco de Render gratis se borra al reiniciar,
+# y un archivo SQLite ahí perdería tus cuentas.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if DATABASE_URL:
+    import dj_database_url
+
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+
+if RENDER_HOST:
+    # WhiteNoise sirve los archivos estáticos (CSS del admin, etc.) desde Django.
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
+    STATIC_ROOT = BASE_DIR / "staticfiles"
+    STORAGES = {
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+        "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+    }
+    # Para que los formularios (POST) funcionen por https detrás del proxy de Render.
+    CSRF_TRUSTED_ORIGINS = [f"https://{RENDER_HOST}"]
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
