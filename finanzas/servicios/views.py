@@ -15,6 +15,8 @@ def panel(request):
     servicios = [{"clave": clave_de(s), "nombre": s["nombre"]} for s in settings.MICROSERVICIOS]
     return render(request, "servicios/panel.html", {
         "servicios": servicios,
+        # URLs para que el NAVEGADOR despierte los servicios (ver panel.html)
+        "ms_urls": {clave_de(s): s["url"].strip().rstrip("/") for s in settings.MICROSERVICIOS},
         "pendientes": supabase_sync.cantidad_pendientes(),
     })
 

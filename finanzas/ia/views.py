@@ -42,7 +42,7 @@ def chat_ia(request):
                     )
                     request.session.pop("ia_respuesta", None)
             except TodosFallaron as e:
-                request.session["ia_error"] = f"No respondió ningún microservicio de IA ({e}). Ya los estoy despertando: espera un minuto y vuelve a enviar, o enciéndelos desde la pestaña Microservicios."
+                request.session["ia_error"] = f"No respondió ningún microservicio de IA ({e}). Están apagados o despertando: entra a la pestaña Microservicios, pulsa Encender todos y vuelve a enviar."
                 request.session.pop("ia_respuesta", None)
             except requests.exceptions.RequestException as e:
                 request.session["ia_error"] = f"No se pudo contactar al microservicio de IA: {e}"

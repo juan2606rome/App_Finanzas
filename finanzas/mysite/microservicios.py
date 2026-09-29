@@ -98,8 +98,11 @@ def llamar(metodo, ruta, json=None, timeout=None):
 # recibir una petición se vuelven a encender, pero tardan de 30 segundos a
 # 2 minutos, y mientras arrancan Render responde 502/429/503. Por eso una
 # petición normal a un servicio dormido "falla" y solo funciona si esperas y
-# lo reintentas. Estas funciones sirven para despertarlos a propósito y para
-# saber cuáles ya están listos.
+# lo reintentas. OJO: en Render, una petición de un servicio a otro (Django ->
+# microservicio) muchas veces NO logra despertarlo (devuelve 429/502 y el
+# servicio ni se entera); la que sí lo despierta es la del NAVEGADOR (ver
+# servicios/panel.html). Estas funciones sirven sobre todo para saber
+# cuáles ya están listos.
 
 def clave_de(servicio):
     """'Node.js' -> 'nodejs', 'Python' -> 'python' (para usar en URLs)."""

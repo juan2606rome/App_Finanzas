@@ -58,6 +58,7 @@
         <a href="{% url 'cuentas:index' %}" class="btn btn-secondary btn-sm">Volver al inicio</a>
     </div>
 
+{{ ms_urls|json_script:"ms-urls" }}
 <script>
 const filas = {};
 document.querySelectorAll("[data-clave]").forEach(f => filas[f.dataset.clave] = f);
@@ -65,6 +66,20 @@ const msg = document.getElementById("msg");
 const pingUrl = "{% url 'servicios:ping' %}";
 const syncUrl = "{% url 'servicios:sincronizar' %}";
 const despertando = new Set();
+const urls = JSON.parse(document.getElementById("ms-urls").textContent);
+const enVuelo = {};
+
+// Render enciende un servicio dormido cuando le llega una petición DEL NAVEGADOR
+// (las que hace el servidor de Django, de Render a Render, no lo despiertan de
+// forma fiable). "no-cors" deja enviarla aunque el microservicio no acepte CORS.
+function despertarDesdeNavegador(clave) {
+    if (!urls[clave]) return;
+    if (enVuelo[clave] && Date.now() - enVuelo[clave] < 50000) return;
+    enVuelo[clave] = Date.now();
+    fetch(urls[clave] + "/", {mode: "no-cors", cache: "no-store"})
+        .catch(() => {})
+        .finally(() => { enVuelo[clave] = 0; });
+}
 
 function pintar(e) {
     const f = filas[e.clave];
@@ -104,11 +119,12 @@ async function consultar(clave) {
 }
 
 // Enciende un servicio: cada consulta es una petición que lo despierta;
-// repetimos cada 4 s (máximo ~3 minutos) hasta que responda OK.
+// repetimos cada 4 s (máximo ~4 minutos) hasta que responda OK.
 async function encender(clave) {
     despertando.add(clave);
     pintar({clave, activo: false, detalle: "esperando respuesta…"});
-    for (let i = 0; i < 45 && despertando.has(clave); i++) {
+    for (let i = 0; i < 60 && despertando.has(clave); i++) {
+        despertarDesdeNavegador(clave);
         const est = await consultar(clave);
         if (est.length && est[0].activo) return true;
         await new Promise(ok => setTimeout(ok, 4000));
