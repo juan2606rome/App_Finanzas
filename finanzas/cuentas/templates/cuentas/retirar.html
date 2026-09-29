@@ -46,5 +46,6 @@
             <a href="{% url 'cuentas:detalle_cuenta' cuenta.id %}" class="btn btn-secondary">Cancelar</a>
         </form>
     </div>
+    {% include "cuentas/_anti_doble_envio.html" %}
 </body>
 </html>

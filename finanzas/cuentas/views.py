@@ -42,6 +42,13 @@ def crear_cuenta(request):
             messages.error(request, "El nombre de la cuenta es obligatorio.")
             return render(request, "cuentas/crear_cuenta.html")
 
+        # Segunda barrera contra cuentas repetidas (la primera es el loader del
+        # botón, que evita el doble clic): no dejamos crear dos cuentas con el
+        # mismo nombre, sin importar mayúsculas/minúsculas.
+        if Cuenta.objects.filter(nombre__iexact=nombre).exists():
+            messages.error(request, f"Ya tienes una cuenta llamada '{nombre}'.")
+            return render(request, "cuentas/crear_cuenta.html")
+
         cuenta = Cuenta.objects.create(nombre=nombre, saldo=saldo_inicial)
         supabase_sync.sync_crear_cuenta(cuenta)
 
@@ -69,6 +76,10 @@ def editar_cuenta(request, cuenta_id):
 
         if not nuevo_nombre:
             messages.error(request, "El nombre de la cuenta es obligatorio.")
+            return render(request, "cuentas/editar_cuenta.html", {"cuenta": cuenta})
+
+        if Cuenta.objects.filter(nombre__iexact=nuevo_nombre).exclude(pk=cuenta.pk).exists():
+            messages.error(request, f"Ya tienes otra cuenta llamada '{nuevo_nombre}'.")
             return render(request, "cuentas/editar_cuenta.html", {"cuenta": cuenta})
 
         cuenta.nombre = nuevo_nombre

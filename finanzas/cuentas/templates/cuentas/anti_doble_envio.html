@@ -1,0 +1,97 @@
+<!-- ruta: finanzas/cuentas/templates/cuentas/_anti_doble_envio.html -->
+{% comment %}
+    Evita los envíos dobles de formularios. Se incluye al final del <body> con:
+        {% include "cuentas/_anti_doble_envio.html" %}
+
+    Qué hace, en TODOS los <form method="post"> de la página:
+      - Al enviar, desactiva los botones y les pone un loader (spinner).
+      - Si el formulario ya se envió, ignora cualquier otro envío (doble clic, Enter repetido...).
+      - Si la página vuelve con el botón "Atrás" del navegador, deja el botón listo otra vez.
+      - Si algo se traba, a los 2 minutos vuelve a habilitar el botón para no dejarte bloqueado.
+
+    Atributos opcionales en el <form>:
+      data-texto-cargando="Consultando a la IA…"   texto del botón mientras carga
+      data-aviso="#id-del-aviso"                    muestra ese elemento mientras carga
+      data-sin-loader                               este formulario no usa el loader
+{% endcomment %}
+<script>
+(function () {
+    var TEXTO_POR_DEFECTO = "Procesando…";
+    var LIMITE_MS = 120000; // 2 min: si sigue sin respuesta, se libera el botón
+
+    function botones(form) {
+        return form.querySelectorAll('button[type="submit"], button:not([type]), input[type="submit"]');
+    }
+
+    function bloquear(form, quienEnvia) {
+        var texto = form.getAttribute("data-texto-cargando") || TEXTO_POR_DEFECTO;
+        form.dataset.enviando = "1";
+
+        botones(form).forEach(function (b) {
+            if (b.tagName === "BUTTON") {
+                b.dataset.htmlOriginal = b.innerHTML;
+                if (b === quienEnvia || !quienEnvia) {
+                    b.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>' + texto;
+                }
+            } else {
+                b.dataset.valorOriginal = b.value;
+                if (b === quienEnvia || !quienEnvia) b.value = texto;
+            }
+            b.disabled = true;
+        });
+
+        // readOnly (no disabled): un campo desactivado NO se envía con el formulario.
+        form.querySelectorAll("input, textarea, select").forEach(function (c) {
+            if (c.type !== "hidden") c.setAttribute("data-estaba-readonly", c.readOnly ? "1" : "0");
+            if (c.tagName !== "SELECT") c.readOnly = true;
+        });
+
+        var aviso = form.getAttribute("data-aviso");
+        if (aviso) {
+            var el = document.querySelector(aviso);
+            if (el) el.classList.remove("d-none");
+        }
+        form._temporizador = setTimeout(function () { liberar(form); }, LIMITE_MS);
+    }
+
+    function liberar(form) {
+        clearTimeout(form._temporizador);
+        form.dataset.enviando = "0";
+        botones(form).forEach(function (b) {
+            if (b.tagName === "BUTTON" && b.dataset.htmlOriginal !== undefined) b.innerHTML = b.dataset.htmlOriginal;
+            if (b.tagName !== "BUTTON" && b.dataset.valorOriginal !== undefined) b.value = b.dataset.valorOriginal;
+            b.disabled = false;
+        });
+        form.querySelectorAll("[data-estaba-readonly]").forEach(function (c) {
+            if (c.tagName !== "SELECT") c.readOnly = c.getAttribute("data-estaba-readonly") === "1";
+        });
+        var aviso = form.getAttribute("data-aviso");
+        if (aviso) {
+            var el = document.querySelector(aviso);
+            if (el) el.classList.add("d-none");
+        }
+    }
+
+    document.addEventListener("submit", function (e) {
+        var form = e.target;
+        if (!form || !form.tagName || form.tagName !== "FORM") return;
+        if ((form.method || "").toLowerCase() !== "post" || form.hasAttribute("data-sin-loader")) return;
+
+        if (form.dataset.enviando === "1") {   // ya se envió: se ignora este intento
+            e.preventDefault();
+            return;
+        }
+        // 'submit' solo se dispara si el formulario pasó la validación (required, etc.).
+        // Bloqueamos en el siguiente ciclo para no interferir con el envío en curso.
+        var quien = e.submitter || null;
+        setTimeout(function () { bloquear(form, quien); }, 0);
+    });
+
+    // Al volver con "Atrás" el navegador puede mostrar la página tal como quedó.
+    window.addEventListener("pageshow", function (e) {
+        if (e.persisted) {
+            document.querySelectorAll('form[data-enviando="1"]').forEach(liberar);
+        }
+    });
+})();
+</script>

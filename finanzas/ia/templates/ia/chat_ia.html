@@ -30,7 +30,7 @@
             (sincronizada en Supabase) antes de responder.
         </p>
 
-        <form method="post" class="mb-4">
+        <form method="post" class="mb-4" data-texto-cargando="Consultando a la IA…" data-aviso="#aviso-ia">
             {% csrf_token %}
             <div class="mb-3">
                 <textarea name="pregunta" class="form-control" rows="3"
@@ -38,6 +38,12 @@
             </div>
             <button type="submit" class="btn btn-primary">Enviar</button>
         </form>
+
+        <div id="aviso-ia" class="alert alert-info d-none">
+            <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
+            La IA está pensando… no hace falta enviar la pregunta otra vez. Si los
+            microservicios estaban dormidos puede tardar hasta unos 30 segundos.
+        </div>
 
         {% if error %}
             <div class="alert alert-danger">{{ error }}</div>
@@ -62,5 +68,6 @@
 
         <a href="{% url 'cuentas:index' %}" class="btn btn-secondary btn-sm mt-3">Volver al inicio</a>
     </div>
+    {% include "cuentas/_anti_doble_envio.html" %}
 </body>
 </html>

@@ -15,6 +15,10 @@ Idea general:
       * y se reanuda solo al entrar a Inicio, a Chat con IA o a la página
         Microservicios (ver reanudar_si_hay_pendientes);
       * o a mano con el botón "Sincronizar con Supabase".
+- AUTOMÁTICO: en cuanto Django nota que un microservicio pasó de apagado a
+  encendido (ver registrar_al_encender), lo PRIMERO que hace es vaciar la
+  bandeja y reconciliar todo con Supabase (igual que el botón "Sincronizar
+  todo"), sin que tengas que pulsar nada.
 - Las escrituras en los microservicios son "upsert" (insertar o reemplazar
   por id), así que reenviar la misma operación dos veces es seguro.
 
@@ -30,7 +34,9 @@ import time
 from django.conf import settings
 from django.db import connection
 
-from mysite.microservicios import TodosFallaron, despertar_en_segundo_plano, llamar
+from mysite.microservicios import (
+    TodosFallaron, despertar_en_segundo_plano, estado_todos, llamar, registrar_al_encender,
+)
 
 from .models import Cuenta, SyncPendiente, Transaccion
 
@@ -43,9 +49,9 @@ _hilo = None
 # Cada cuánto y cuántas veces reintenta el hilo cuando todos están apagados.
 ESPERA_ENTRE_REINTENTOS = 15  # segundos
 MAX_REINTENTOS_HILO = 12      # 12 x 15 s = 3 minutos
-# Una operación que falla tantas veces seguidas se descarta (para que una
-# sola fila mala no bloquee toda la bandeja). "Sincronizar todo" la repone.
-MAX_INTENTOS_POR_OPERACION = 30
+# Mínimo de segundos entre dos reconciliaciones completas automáticas
+# (evita re-subir todo cada vez que un servicio parpadea entre apagado/encendido).
+COOLDOWN_RECONCILIACION = 300
 
 
 # ---------------------------------------------------------------------
@@ -62,6 +68,7 @@ def _enviar_una(pendiente):
         respuesta, servicio, fallos = llamar(
             pendiente.metodo, pendiente.ruta,
             json=pendiente.cuerpo, timeout=settings.MS_TIMEOUT_ESCRITURA,
+            plazo_total=settings.MS_TIMEOUT_ESCRITURA * 2,
         )
     except TodosFallaron as e:
         pendiente.intentos += 1
@@ -79,14 +86,24 @@ def _enviar_una(pendiente):
     return "ok"
 
 
-def procesar_pendientes(max_segundos=None):
+def procesar_pendientes(max_segundos=None, espera_candado=None):
     """
     Envía la bandeja en orden. Se detiene en la primera operación que no se
     pueda enviar (para no desordenar). Devuelve True si la bandeja quedó vacía.
-    Espera si otro hilo ya la está procesando.
+
+    Si otro hilo ya la está procesando, espera `espera_candado` segundos (o lo
+    que haga falta si es None). Si no logra el turno a tiempo devuelve False:
+    así una petición web nunca se queda colgada esperando al vigilante.
+
+    Las operaciones NO se descartan por fallar muchas veces: si los
+    microservicios están apagados, se quedan guardadas hasta que alguno
+    encienda. (Solo se descartan las rechazadas por datos malos, error 4xx,
+    porque reenviarlas no las arregla.)
     """
     inicio = time.time()
-    with _candado_proceso:
+    if not _candado_proceso.acquire(timeout=-1 if espera_candado is None else espera_candado):
+        return False
+    try:
         while True:
             pendiente = SyncPendiente.objects.order_by("id").first()
             if pendiente is None:
@@ -96,11 +113,9 @@ def procesar_pendientes(max_segundos=None):
             if _enviar_una(pendiente) == "ok":
                 SyncPendiente.objects.filter(pk=pendiente.pk).delete()
             else:
-                if pendiente.intentos >= MAX_INTENTOS_POR_OPERACION:
-                    print(f"[sync] {pendiente.descripcion}: demasiados intentos, se descarta.")
-                    SyncPendiente.objects.filter(pk=pendiente.pk).delete()
-                    continue
                 return False
+    finally:
+        _candado_proceso.release()
 
 
 # ---------------------------------------------------------------------
@@ -151,6 +166,14 @@ _vigilante = None
 def _bucle_vigilante():
     time.sleep(10)  # dar tiempo a que Django termine de arrancar
     ultimo_despertar = 0.0
+    # Lo PRIMERO que revisa: ¿hay algún microservicio ya encendido? Si lo hay,
+    # el aviso "acaba de encender" dispara la reconciliación automática.
+    try:
+        estado_todos(timeout=10)
+    except Exception as e:
+        print(f"[sync] vigilante: revisión inicial falló: {e}")
+    finally:
+        connection.close()
     while True:
         try:
             if SyncPendiente.objects.exists():
@@ -248,6 +271,44 @@ def sync_insertar_transaccion(transaccion):
     """INSERTAR: copia esta Transaccion al historial de Supabase."""
     _encolar("POST", "/api/transacciones", _cuerpo_transaccion(transaccion),
              f"insertar transacción {transaccion.id}")
+
+
+# ---------------------------------------------------------------------
+# SINCRONIZACIÓN AUTOMÁTICA al encender un microservicio
+# ---------------------------------------------------------------------
+_candado_reconciliar = threading.Lock()
+_ultima_reconciliacion = 0.0
+
+
+def _reconciliar(nombre):
+    """Se ejecuta en un hilo cuando el microservicio `nombre` acaba de encender:
+    1) sube TODO lo que hay en Django (reconciliación completa, si hace falta), y
+    2) vacía la bandeja."""
+    global _ultima_reconciliacion
+    try:
+        if _candado_reconciliar.acquire(blocking=False):
+            try:
+                ya_hay_resincronizacion = SyncPendiente.objects.filter(
+                    descripcion__startswith="resincronizar"
+                ).exists()
+                reciente = time.time() - _ultima_reconciliacion < COOLDOWN_RECONCILIACION
+                if not ya_hay_resincronizacion and not reciente:
+                    cuentas, transacciones = sync_todo()
+                    _ultima_reconciliacion = time.time()
+                    print(f"[sync] {nombre} encendió: reconciliación automática "
+                          f"({cuentas} cuenta(s), {transacciones} movimiento(s)).")
+            finally:
+                _candado_reconciliar.release()
+        procesar_pendientes()
+    except Exception as e:  # p. ej. la tabla aún no existe antes de migrar
+        print(f"[sync] reconciliación automática falló: {e}")
+    finally:
+        connection.close()
+
+
+# Cada vez que cualquier parte de Django (una petición, el vigilante o la
+# pantalla Microservicios) nota que un servicio encendió, se llama a _reconciliar.
+registrar_al_encender(_reconciliar)
 
 
 # ---------------------------------------------------------------------

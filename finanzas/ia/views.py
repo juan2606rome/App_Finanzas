@@ -16,12 +16,17 @@ def chat_ia(request):
         else:
             try:
                 # La IA lee los datos desde Supabase. Antes de preguntar, subimos lo
-                # que haya quedado pendiente (máx. 25 s) para que vea tus cuentas al día.
-                supabase_sync.procesar_pendientes(max_segundos=25)
+                # que haya quedado pendiente para que vea tus cuentas al día. Es
+                # "mejor esfuerzo": máx. 8 s, y si el vigilante está enviando la
+                # bandeja justo ahora, esperamos como mucho 3 s su turno (así la
+                # página nunca se queda colgada).
+                supabase_sync.procesar_pendientes(max_segundos=8, espera_candado=3)
 
                 # Resiliencia: prueba Python -> Java -> Node.js -> Go
                 # (ver mysite/microservicios.py). Solo se pasa al siguiente si
-                # el anterior no responde o falla con error del servidor.
+                # el anterior no responde o falla con error del servidor. Toda la
+                # búsqueda tiene un plazo total (MS_PLAZO_TOTAL, 27 s por defecto)
+                # para no pasarse del timeout de gunicorn.
                 resultado, servicio, fallos = llamar(
                     "POST", "/api/preguntar", json={"pregunta": pregunta}, timeout=25
                 )
@@ -42,7 +47,7 @@ def chat_ia(request):
                     )
                     request.session.pop("ia_respuesta", None)
             except TodosFallaron as e:
-                request.session["ia_error"] = f"No respondió ningún microservicio de IA ({e}). Están apagados o despertando: entra a la pestaña Microservicios, pulsa Encender todos y vuelve a enviar."
+                request.session["ia_error"] = f"No respondió ningún microservicio de IA ({e}). Ya se están despertando: espera un momento (o mira la pestaña Microservicios) y vuelve a enviar."
                 request.session.pop("ia_respuesta", None)
             except requests.exceptions.RequestException as e:
                 request.session["ia_error"] = f"No se pudo contactar al microservicio de IA: {e}"

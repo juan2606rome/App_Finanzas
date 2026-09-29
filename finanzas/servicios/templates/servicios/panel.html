@@ -29,6 +29,8 @@
             Los servicios gratis de Render se apagan solos tras unos 15 minutos sin uso y
             tardan entre 30 segundos y 2 minutos en volver a encender. Aquí puedes ver cuáles
             están encendidos y despertarlos antes de usar Cotización o el Chat con IA.
+            Apenas Django nota que uno encendió, sube solo a Supabase todo lo pendiente;
+            el botón de sincronizar queda por si quieres forzarlo a mano.
         </p>
 
         <div class="mb-3">
@@ -111,6 +113,10 @@ async function consultar(clave) {
         const d = await r.json();
         d.servicios.forEach(pintar);
         pintarPendientes(d.pendientes);
+        if (d.pendientes > 0 && d.servicios.some(x => x.activo)) {
+            msg.textContent = "Hay un microservicio encendido: sincronizando con Supabase automáticamente…";
+        }
+        if (d.pendientes > 0) vigilarBandeja();
         return d.servicios;
     } catch (err) {
         msg.textContent = "No se pudo consultar el estado: " + err;
@@ -141,20 +147,45 @@ document.getElementById("btn-todos").addEventListener("click", () => {
     Object.keys(filas).forEach(c => { if (!filas[c].querySelector(".btn-encender").disabled) encender(c); });
 });
 
-document.getElementById("btn-sync").addEventListener("click", async () => {
-    const token = document.querySelector("[name=csrfmiddlewaretoken]").value;
-    const r = await fetch(syncUrl, {method: "POST", headers: {"X-CSRFToken": token}});
-    const d = await r.json();
-    pintarPendientes(d.pendientes);
-    msg.textContent = `En cola: ${d.cuentas} cuenta(s) y ${d.transacciones} movimiento(s). ` +
-        "Se suben apenas haya un microservicio encendido (usa 'Encender todos' si están apagados).";
-    // Vigilar hasta que la bandeja se vacíe.
-    const t = setInterval(async () => {
-        const est = await fetch(pingUrl + "?s=todos").then(x => x.json());
-        pintarPendientes(est.pendientes);
-        est.servicios.forEach(pintar);
-        if (est.pendientes === 0) { clearInterval(t); msg.textContent = "Sincronización completa."; }
+// Vigila la bandeja hasta que quede vacía. Solo puede haber UN vigilante a la vez
+// (así no se apilan consultas cada vez que llamamos a esta función).
+let vigia = null;
+function vigilarBandeja() {
+    if (vigia) return;
+    vigia = setInterval(async () => {
+        try {
+            const est = await fetch(pingUrl + "?s=todos").then(x => x.json());
+            pintarPendientes(est.pendientes);
+            est.servicios.forEach(pintar);
+            if (est.pendientes === 0) {
+                clearInterval(vigia); vigia = null;
+                msg.textContent = "Sincronización completa.";
+            }
+        } catch (err) { /* se reintenta en el próximo ciclo */ }
     }, 5000);
+}
+
+// Botón "Sincronizar todo": un solo clic a la vez (si ya está trabajando, ignora los demás).
+const btnSync = document.getElementById("btn-sync");
+btnSync.addEventListener("click", async () => {
+    if (btnSync.disabled) return;
+    const textoOriginal = btnSync.textContent;
+    btnSync.disabled = true;
+    btnSync.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sincronizando…';
+    try {
+        const token = document.querySelector("[name=csrfmiddlewaretoken]").value;
+        const r = await fetch(syncUrl, {method: "POST", headers: {"X-CSRFToken": token}});
+        const d = await r.json();
+        pintarPendientes(d.pendientes);
+        msg.textContent = `En cola: ${d.cuentas} cuenta(s) y ${d.transacciones} movimiento(s). ` +
+            "Se suben apenas haya un microservicio encendido (usa 'Encender todos' si están apagados).";
+        vigilarBandeja();
+    } catch (err) {
+        msg.textContent = "No se pudo iniciar la sincronización: " + err;
+    } finally {
+        btnSync.disabled = false;
+        btnSync.textContent = textoOriginal;
+    }
 });
 
 consultar("todos");
