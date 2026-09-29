@@ -71,7 +71,7 @@ def cotizacion(request):
             error = "El microservicio no devolvió ninguna tasa registrada."
 
     except TodosFallaron as e:
-        error = f"No respondió ningún microservicio ({e})."
+        error = f"No respondió ningún microservicio ({e}). Ya los estoy despertando: espera un minuto y recarga, o enciéndelos desde la pestaña Microservicios."
     except requests.exceptions.RequestException as e:
         error = f"El microservicio {servicio} respondió con error: {e}"
     except (KeyError, ValueError, TypeError) as e:

@@ -10,6 +10,9 @@ from .models import Cuenta, Transaccion
 
 def index(request):
     """Pantalla principal: total de plata + lista de cuentas."""
+    # Si quedaron operaciones sin subir a Supabase (microservicios apagados),
+    # se reanuda el envío en segundo plano.
+    supabase_sync.reanudar_si_hay_pendientes()
     cuentas = Cuenta.objects.all()
     total = sum((c.saldo for c in cuentas), Decimal("0"))
     # El total no es un objeto Cuenta (es solo un número que sumamos

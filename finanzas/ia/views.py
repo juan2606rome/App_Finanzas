@@ -2,6 +2,7 @@
 import requests
 from django.shortcuts import render, redirect
 
+from cuentas import supabase_sync
 from mysite.microservicios import TodosFallaron, llamar
 
 
@@ -14,6 +15,10 @@ def chat_ia(request):
             request.session.pop("ia_respuesta", None)
         else:
             try:
+                # La IA lee los datos desde Supabase. Antes de preguntar, subimos lo
+                # que haya quedado pendiente (máx. 25 s) para que vea tus cuentas al día.
+                supabase_sync.procesar_pendientes(max_segundos=25)
+
                 # Resiliencia: prueba Python -> Java -> Node.js -> Go
                 # (ver mysite/microservicios.py). Solo se pasa al siguiente si
                 # el anterior no responde o falla con error del servidor.
@@ -37,7 +42,7 @@ def chat_ia(request):
                     )
                     request.session.pop("ia_respuesta", None)
             except TodosFallaron as e:
-                request.session["ia_error"] = f"No respondió ningún microservicio de IA ({e})."
+                request.session["ia_error"] = f"No respondió ningún microservicio de IA ({e}). Ya los estoy despertando: espera un minuto y vuelve a enviar, o enciéndelos desde la pestaña Microservicios."
                 request.session.pop("ia_respuesta", None)
             except requests.exceptions.RequestException as e:
                 request.session["ia_error"] = f"No se pudo contactar al microservicio de IA: {e}"

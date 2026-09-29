@@ -90,3 +90,28 @@ class Transaccion(models.Model):
     def monto_formateado(self):
         """Lo mismo que saldo_formateado, pero para el monto del movimiento."""
         return f"{int(self.monto):,}".replace(",", ".")
+
+class SyncPendiente(models.Model):
+    """
+    Una operación que hay que mandar a Supabase a través de los
+    microservicios (insertar/actualizar/eliminar una cuenta, o insertar una
+    transacción).
+
+    Sirve de "bandeja de salida" guardada en la base de datos de Django: si
+    los microservicios están apagados cuando haces algo, la operación NO se
+    pierde, se queda aquí y se envía sola en cuanto alguno despierte.
+    Cuando se envía bien, la fila se borra.
+    """
+    metodo = models.CharField(max_length=10)
+    ruta = models.CharField(max_length=200)
+    cuerpo = models.JSONField(null=True, blank=True)
+    descripcion = models.CharField(max_length=200, blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+    intentos = models.PositiveIntegerField(default=0)
+    ultimo_error = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        ordering = ["id"]  # se envían en el mismo orden en que ocurrieron
+
+    def __str__(self):
+        return f"{self.metodo} {self.ruta}"

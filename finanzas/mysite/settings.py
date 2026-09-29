@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     "cuentas",
     "tasas",
     "ia",
+    "servicios",
 ]
 
 MIDDLEWARE = [
