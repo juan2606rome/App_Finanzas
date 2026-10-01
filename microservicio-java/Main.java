@@ -19,6 +19,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -60,6 +62,34 @@ public class Main {
     // merge-duplicates: si el id ya existe, la fila se actualiza en vez de fallar.
     static final String UPSERT = "resolution=merge-duplicates,return=minimal";
     static final Pattern SOLO_DIGITOS = Pattern.compile("^\\d+$");
+
+    // Documentación Swagger: /docs (interfaz) y /swagger.json (especificación OpenAPI).
+    // swagger.json se copia junto al programa (ver Dockerfile) y se lee al arrancar.
+    static final String SWAGGER_JSON = cargarSwagger();
+    static final String DOCS_HTML = """
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Swagger - Microservicio Finanzas</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head>
+<body><div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>window.ui = SwaggerUIBundle({ url: "/swagger.json", dom_id: "#swagger-ui" });</script>
+</body></html>""";
+
+    static String cargarSwagger() {
+        try {
+            return Files.readString(Path.of("swagger.json"), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "{\"error\":\"No se encontró swagger.json junto al programa.\"}";
+        }
+    }
+
+    static void enviarTexto(HttpExchange ex, int codigo, String tipo, String texto) throws IOException {
+        byte[] bytes = texto.getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().set("Content-Type", tipo);
+        ex.sendResponseHeaders(codigo, bytes.length);
+        try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+    }
 
     static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
@@ -581,7 +611,12 @@ public class Main {
         try {
             if (metodo.equals("GET") && ruta.equals("/")) {
                 enviar(ex, 200, obj("status", "ok", "servicio", "microservicio-java",
-                        "uso", "GET /api/tasa, POST /api/preguntar, POST /api/cuentas, PUT|DELETE /api/cuentas/{id}, POST /api/transacciones"));
+                        "uso", "GET /api/tasa, POST /api/preguntar, POST /api/cuentas, PUT|DELETE /api/cuentas/{id}, POST /api/transacciones",
+                        "documentacion", "/docs"));
+            } else if (metodo.equals("GET") && ruta.equals("/swagger.json")) {
+                enviarTexto(ex, 200, "application/json; charset=utf-8", SWAGGER_JSON);
+            } else if (metodo.equals("GET") && (ruta.equals("/docs") || ruta.equals("/docs/"))) {
+                enviarTexto(ex, 200, "text/html; charset=utf-8", DOCS_HTML);
             } else if (metodo.equals("GET") && ruta.equals("/api/tasa")) {
                 obtenerTasa(ex);
             } else if (metodo.equals("POST") && ruta.equals("/api/preguntar")) {

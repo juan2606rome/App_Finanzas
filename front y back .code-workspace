@@ -5,6 +5,15 @@
 		},
 		{
 			"path": "microservicio"
+		},
+		{
+			"path": "microservicio-go"
+		},
+		{
+			"path": "microservicio-java"
+		},
+		{
+			"path": "microservicio-node"
 		}
 	],
 	"settings": {}

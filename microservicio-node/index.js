@@ -10,6 +10,19 @@
 "use strict";
 
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
+
+// Documentación Swagger: /docs (interfaz) y /swagger.json (especificación OpenAPI).
+const SWAGGER_JSON = fs.readFileSync(path.join(__dirname, "swagger.json"), "utf8");
+const DOCS_HTML = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Swagger - Microservicio Finanzas</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head>
+<body><div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>window.ui = SwaggerUIBundle({ url: "/swagger.json", dom_id: "#swagger-ui" });</script>
+</body></html>`;
 
 // ---------------------------------------------------------------------
 // Configuración (variables de entorno, igual que en Render)
@@ -331,7 +344,16 @@ const servidor = http.createServer(async (req, res) => {
         status: "ok",
         servicio: "microservicio-nodejs",
         uso: "GET /api/tasa, POST /api/preguntar, POST /api/cuentas, PUT|DELETE /api/cuentas/:id, POST /api/transacciones",
+        documentacion: "/docs",
       });
+    }
+    if (metodo === "GET" && pathname === "/swagger.json") {
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      return res.end(SWAGGER_JSON);
+    }
+    if (metodo === "GET" && (pathname === "/docs" || pathname === "/docs/")) {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      return res.end(DOCS_HTML);
     }
     if (metodo === "GET" && pathname === "/api/tasa") return await obtenerTasa(res);
     if (metodo === "POST" && pathname === "/api/preguntar") return await preguntarIA(req, res);

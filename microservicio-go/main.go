@@ -12,6 +12,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -66,6 +67,21 @@ const (
 )
 
 type obj = map[string]any
+
+// Documentación Swagger: /docs (interfaz) y /swagger.json (especificación OpenAPI).
+// El archivo swagger.json (misma carpeta que main.go) se incrusta en el binario.
+//
+//go:embed swagger.json
+var swaggerJSON []byte
+
+const docsHTML = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Swagger - Microservicio Finanzas</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css"></head>
+<body><div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>window.ui = SwaggerUIBundle({ url: "/swagger.json", dom_id: "#swagger-ui" });</script>
+</body></html>`
 
 // ---------------------------------------------------------------------
 // Utilidades
@@ -518,7 +534,14 @@ func rutas(w http.ResponseWriter, r *http.Request) {
 			"status":   "ok",
 			"servicio": "microservicio-go",
 			"uso":      "GET /api/tasa, POST /api/preguntar, POST /api/cuentas, PUT|DELETE /api/cuentas/{id}, POST /api/transacciones",
+			"documentacion": "/docs",
 		})
+	case metodo == "GET" && ruta == "/swagger.json":
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(swaggerJSON)
+	case metodo == "GET" && (ruta == "/docs" || ruta == "/docs/"):
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(docsHTML))
 	case metodo == "GET" && ruta == "/api/tasa":
 		obtenerTasa(w)
 	case metodo == "POST" && ruta == "/api/preguntar":

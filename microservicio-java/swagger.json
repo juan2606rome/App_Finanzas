@@ -1,0 +1,241 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Microservicio Finanzas (tasas, IA y escritura en Supabase)",
+    "description": "Las mismas rutas existen en los 4 microservicios (Python, Java, Node.js y Go). Este servicio consulta/escribe en Supabase y consulta a Mistral IA. Las claves (SUPABASE_URL, SUPABASE_KEY, MISTRAL_API_KEY) viven como variables de entorno en Render: NO se envían en las peticiones, por eso aquí no hay que escribir ningún token.",
+    "version": "3.0.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Estado del microservicio",
+        "responses": {
+          "200": {
+            "description": "Servicio funcionando correctamente"
+          }
+        },
+        "tags": [
+          "Estado"
+        ]
+      }
+    },
+    "/api/tasa": {
+      "get": {
+        "summary": "Obtener las tasas de cambio registradas",
+        "description": "Consulta en Supabase todas las filas de la tabla 'tasas' (USD, EUR, etc.).",
+        "responses": {
+          "200": {
+            "description": "Tasas obtenidas correctamente",
+            "content": {
+              "application/json": {
+                "example": {
+                  "tasas": [
+                    {
+                      "moneda": "USD",
+                      "tasa_cop": 4300,
+                      "fecha_actualizacion": "2026-09-19T07:00:00"
+                    },
+                    {
+                      "moneda": "EUR",
+                      "tasa_cop": 4700,
+                      "fecha_actualizacion": "2026-09-19T07:00:00"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No hay datos en la tabla tasas"
+          },
+          "500": {
+            "description": "Faltan las variables de Supabase"
+          },
+          "502": {
+            "description": "Error al consultar Supabase"
+          }
+        },
+        "tags": [
+          "Lectura"
+        ]
+      }
+    },
+    "/api/preguntar": {
+      "post": {
+        "summary": "Preguntarle algo a la IA sobre tus finanzas",
+        "description": "Envía una pregunta; el microservicio arma contexto desde Supabase (cuentas, tasas, movimientos) y devuelve la respuesta generada por Mistral IA.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "pregunta": "¿Cuántos dólares puedo tener con mi plata?"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Respuesta generada correctamente",
+            "content": {
+              "application/json": {
+                "example": {
+                  "respuesta": "Con tu total en pesos, hoy tendrías aproximadamente 395.35 USD."
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No se envió ninguna pregunta"
+          },
+          "500": {
+            "description": "Falta configurar MISTRAL_API_KEY"
+          },
+          "502": {
+            "description": "Error al consultar Mistral"
+          }
+        },
+        "tags": [
+          "Lectura"
+        ]
+      }
+    },
+    "/api/cuentas": {
+      "post": {
+        "summary": "INSERTAR una cuenta",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "id": 1,
+                "nombre": "Nequi",
+                "saldo": 500000,
+                "fecha_creacion": "2026-09-26T10:00:00+00:00",
+                "actualizado_en": "2026-09-26T10:00:00+00:00"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Cuenta insertada"
+          },
+          "400": {
+            "description": "Datos incompletos"
+          },
+          "502": {
+            "description": "Error de Supabase"
+          }
+        },
+        "tags": [
+          "Escritura"
+        ]
+      }
+    },
+    "/api/cuentas/{id}": {
+      "put": {
+        "summary": "ACTUALIZAR una cuenta (nombre y/o saldo)",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "nombre": "Nu",
+                "saldo": 750000
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Cuenta actualizada"
+          },
+          "400": {
+            "description": "Datos incompletos"
+          },
+          "502": {
+            "description": "Error de Supabase"
+          }
+        },
+        "tags": [
+          "Escritura"
+        ]
+      },
+      "delete": {
+        "summary": "ELIMINAR una cuenta",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cuenta eliminada"
+          },
+          "400": {
+            "description": "Id inválido"
+          },
+          "502": {
+            "description": "Error de Supabase"
+          }
+        },
+        "tags": [
+          "Escritura"
+        ]
+      }
+    },
+    "/api/transacciones": {
+      "post": {
+        "summary": "INSERTAR una transacción (deposito, retiro o transferencia)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "id": 1,
+                "tipo": "transferencia",
+                "cuenta_origen_id": 1,
+                "cuenta_destino_id": 2,
+                "cuenta_origen_nombre": "Nequi",
+                "cuenta_destino_nombre": "Nu",
+                "monto": 200000,
+                "descripcion": "pago arriendo",
+                "fecha": "2026-09-26T10:00:00+00:00"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Transacción insertada"
+          },
+          "400": {
+            "description": "Datos incompletos"
+          },
+          "502": {
+            "description": "Error de Supabase"
+          }
+        },
+        "tags": [
+          "Escritura"
+        ]
+      }
+    }
+  }
+}

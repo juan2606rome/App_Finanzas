@@ -9,6 +9,8 @@ RUN javac -encoding UTF-8 -d out Main.java
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/out ./out
+# Documentación Swagger (se sirve en /docs y /swagger.json)
+COPY swagger.json .
 # Render (plan gratis) da 512 MB de RAM: limitamos el heap de Java.
 ENV JAVA_TOOL_OPTIONS="-Xmx256m"
 EXPOSE 8080
