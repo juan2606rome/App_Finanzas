@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Microservicio Finanzas (tasas, IA y escritura en Supabase)",
+    "title": "Microservicio Finanzas NODE.JS (tasas, IA y escritura en Supabase)",
     "description": "Las mismas rutas existen en los 4 microservicios (Python, Java, Node.js y Go). Este servicio consulta/escribe en Supabase y consulta a Mistral IA. Las claves (SUPABASE_URL, SUPABASE_KEY, MISTRAL_API_KEY) viven como variables de entorno en Render: NO se envían en las peticiones, por eso aquí no hay que escribir ningún token.",
     "version": "3.0.0"
   },

@@ -382,7 +382,7 @@ swaggerui_blueprint = get_swaggerui_blueprint(
     SWAGGER_URL,
     API_URL,
     config={
-        "app_name": "Microservicio Tasa de Cambio"
+        "app_name": "Microservicio Tasa de Cambio PYTHON"
     }
 )
 
@@ -393,7 +393,7 @@ app.register_blueprint(swaggerui_blueprint)
 SWAGGER_SPEC = {
     "openapi": "3.0.3",
     "info": {
-        "title": "Microservicio Tasa de Cambio",
+        "title": "Microservicio Tasa de Cambio PYTHON",
         "description": (
             "Microservicio que consulta en Supabase las tasas de cambio "
             "(una o varias monedas), las cuentas y el historial de "
